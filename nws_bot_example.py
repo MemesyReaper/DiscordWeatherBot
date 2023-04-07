@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 import pytz
 
 # Discord bot token
-TOKEN = 'token'
+TOKEN = ''
 
 # NWS user creditenals 
 NWS_USER_AGENT = ''
@@ -33,7 +33,7 @@ def get_warning_id(properties):
 def is_new_warning(warning, posted_warnings):
     properties = warning['properties']
     event = properties['event']
-    if event not in ["Tornado Warning"]:
+    if event not in ["Tornado Warning", "Severe Thunderstorm Warning"]:
         return False
     issued_time = datetime.fromisoformat(properties['sent'])
     now = datetime.now(timezone.utc)
@@ -67,8 +67,11 @@ async def send_long_message(channel, message):
 # Sends both the long message and short message
 async def send_warnings():
     global active_warnings, posted_warnings
-    channel = discord.utils.get(bot.get_all_channels(), name='nws-alerts')
-    if channel:
+    channel_tornado = discord.utils.get(bot.get_all_channels(), name='nws-tornado-alerts')
+    channel_thunderstorm = discord.utils.get(bot.get_all_channels(), name='nws-thunderstorm-alerts')
+    channel_outlook = discord.utils.get(bot.get_all_channels(), name='outlook')
+    
+    if channel_tornado and channel_thunderstorm and channel_outlook:
         warnings = await fetch_warnings()
         if warnings:
             new_warnings = [warning for warning in warnings['features'] if is_new_warning(warning, posted_warnings)]
@@ -79,11 +82,19 @@ async def send_warnings():
                     posted_warnings.append(warning_id)
                     expiration_time = datetime.fromisoformat(properties['expires'])
                     active_warnings[warning_id] = expiration_time
-                    short_warning = format_short_message(warning)
-                    full_warning = f'{properties["event"]}: {properties["headline"]}\n{properties["description"]}\n{properties["instruction"]}'
-                    await channel.send(short_warning, tts=True)
-                    await send_long_message(channel, full_warning)
-                  
+                    event = properties['event']
+                    if event == 'Tornado Warning':
+                        short_warning = format_short_message(warning)
+                        full_warning = f'{event}: {properties["headline"]}\n{properties["description"]}\n{properties["instruction"]}'
+                        await channel_tornado.send(short_warning, tts=True)
+                        await send_long_message(channel_tornado, full_warning)
+                    elif event == 'Severe Thunderstorm Warning':
+                        full_warning = format_full_message(warning)
+                        await send_long_message(channel_thunderstorm, full_warning)
+                    elif event == 'Tornado Watch':
+                        outlook_image_url = get_outlook_image_url(properties)
+                        if outlook_image_url:
+                            await channel_outlook.send(outlook_image_url)
             else:
                 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 print(f'[{now}] No new warnings found')
@@ -97,11 +108,12 @@ async def send_warnings():
             posted_warnings.remove(warning_id)
 
 
+
 # Formats the short message
 def format_short_message(warning):
     properties = warning['properties']
     event = properties['event']
-    if event not in ["Tornado Warning", "Severe Thunderstorm Warning"]:
+    if event != "Tornado Warning":
         return ''
     areas = properties['areaDesc'].split(';')
     area_list = [f'{area.strip()} County' for area in areas]
@@ -109,6 +121,19 @@ def format_short_message(warning):
     sent_time = datetime.fromisoformat(properties['sent']).astimezone(timezone(timedelta(hours=-4))).strftime('%I:%M %p')
     expires_time = datetime.fromisoformat(properties['expires']).astimezone(timezone(timedelta(hours=-4))).strftime('%I:%M %p')
     return f'@everyone {event} for {county_list} until {expires_time} EDT. Issued at {sent_time} EDT.'
+
+# Formats the full message for thunderstorm warnings
+def format_full_message(warning):
+    properties = warning['properties']
+    event = properties['event']
+    if event != "Severe Thunderstorm Warning":
+        return ''
+    areas = properties['areaDesc'].split(';')
+    area_list = [f'{area.strip()} County' for area in areas]
+    county_list = ', '.join(area_list)
+    sent_time = datetime.fromisoformat(properties['sent']).astimezone(timezone(timedelta(hours=-4))).strftime('%I:%M %p')
+    expires_time = datetime.fromisoformat(properties['expires']).astimezone(timezone(timedelta(hours=-4))).strftime('%I:%M %p')
+    return f'{event} for {county_list} until {expires_time} EDT. Issued at {sent_time} EDT.\n{properties["description"]}\n{properties["instruction"]}'
 
 # Checks NWS API for new alerts
 @tasks.loop(minutes=1)
@@ -124,3 +149,4 @@ async def on_ready():
     check_warnings.start()
 
 bot.run(TOKEN)
+
