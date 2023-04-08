@@ -70,7 +70,7 @@ async def send_warnings():
     channel_tornado = discord.utils.get(bot.get_all_channels(), name='nws-tornado-alerts')
     channel_thunderstorm = discord.utils.get(bot.get_all_channels(), name='nws-thunderstorm-alerts')
     channel_outlook = discord.utils.get(bot.get_all_channels(), name='outlook')
-    
+
     if channel_tornado and channel_thunderstorm and channel_outlook:
         warnings = await fetch_warnings()
         if warnings:
@@ -88,24 +88,26 @@ async def send_warnings():
                         full_warning = f'{event}: {properties["headline"]}\n{properties["description"]}\n{properties["instruction"]}'
                         await channel_tornado.send(short_warning, tts=True)
                         await send_long_message(channel_tornado, full_warning)
+                        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        print(f'[{now}] New {event} warning found')
                     elif event == 'Severe Thunderstorm Warning':
                         full_warning = format_full_message(warning)
                         await send_long_message(channel_thunderstorm, full_warning)
-                    elif event == 'Tornado Watch':
-                        outlook_image_url = get_outlook_image_url(properties)
-                        if outlook_image_url:
-                            await channel_outlook.send(outlook_image_url)
+                        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        print(f'[{now}] New {event} warning found')
             else:
                 now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 print(f'[{now}] No new warnings found')
         else:
-            print('Unable to fetch warnings')
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f'[{now}] Unable to fetch warnings')
         # Remove expired warnings
         now = datetime.now(timezone.utc)
         expired_warnings = [warning_id for warning_id, expiration_time in active_warnings.items() if now > expiration_time]
         for warning_id in expired_warnings:
             active_warnings.pop(warning_id)
             posted_warnings.remove(warning_id)
+
 
 
 
@@ -149,4 +151,5 @@ async def on_ready():
     check_warnings.start()
 
 bot.run(TOKEN)
+
 
